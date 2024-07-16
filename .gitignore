@@ -1,0 +1,16 @@
+# datsets
+*.mat
+*.hea
+*.csv
+*.json
+*.geojson
+*.DS_Store
+*.skeleton
+*.h5
+*.grd
+
+# web
+*.html
+
+# cache
+*.pyc
