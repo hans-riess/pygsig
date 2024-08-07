@@ -1,3 +1,4 @@
 [submodule "signatory"]
 	path = signatory
 	url = git@github.com:patrick-kidger/signatory.git
+	branch = master
