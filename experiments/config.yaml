@@ -1,0 +1,73 @@
+torch_seed:
+dataset:
+  subduction:
+    name: 'subduction'
+    path:
+      site_path: '../datasets/subduction/site_location.geojson'
+      data_path: '../datasets/subduction/site_data.geojson'
+      poly_path: '../datasets/subduction/polygon_medium.geojson'
+      rast_path: '../datasets/subduction/interface.grd'
+      label_path: '../datasets/subduction/nonlinear.json'
+    time:
+      start_date: '2013-01-01 11:59:00+0000'
+      end_date: '2023-12-31 11:59:00+0000'
+      snapshot_count: 4017
+    task:
+      task_name: 'nonlinear'
+      task_type: 'classification'
+      num_classes: 2
+      labeled_nodes: 35
+      unlabeled_nodes: 9
+    graph:
+      num_nodes: 44
+      num_neighbors: 4
+      radius:
+      kernel_bandwidth: 50000 # meters
+    splits:
+     train_ratio: 0.6
+     eval_ratio: 0.1
+     test_ratio:
+     train_rest:
+     test_rest: True
+     unlabeled_data: True  
+  flock:
+    name: 'flock'
+    simulation:
+      num_trials: 10 # number of times to run the experiment
+      x_min: 0 
+      x_max: 100
+      y_min: 0
+      y_max: 100
+      max_velocity: 5.0
+      radius: 10.0 # maximum distance for which followers align and cohere
+      dist_safe: 5.0 # agents with distance > dist_safe unaffected by avoidance potential function
+      sigma: 10.0 # bandwidth of gaussian distance kernel
+      damp_x: 0.99 #dampening coeficient
+      damp_y: 0.99 # dampening coeficient
+      num_iterations: 400 # number of iterations
+      dt: 0.1  # step size for the Euler method
+      num_targets: 8 # number of targets
+      target_seed: 0 # seed for target generation
+      num_agents: 48 # number of agents (fixed for now)
+      min_num_leaders: 3 # min number of leaders
+      max_num_leaders: 6 # max number of leaders
+      separation_weight: 5.0 # importance of Separation
+      alignment_weight: 1.0 # importance of Alignment
+      cohesion_weight: 0.5 # importance of Cohesion
+      leader_weight: 1.0 # importance of Follow-the-Leader (follower) or Seek-the-Target (leader)
+      noise_gain: 0.1 # noise gain
+model:
+  signature_gcn:
+    model_name: 'signature_gcn'
+    gnn_model: 'gcn_classifier'
+    signature:
+      depth: 4
+      augmented: False
+      normalize: True
+    hyperparameters:
+      learning_rate: 0.0001
+      weight_decay: 0.000001
+      prob_dropout: 0.5
+      loss_function: 'cross_entropy_loss'
+      num_epochs: 200
+      hidden_layers: [32,16,8]

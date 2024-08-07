@@ -4,13 +4,25 @@
 *.csv
 *.json
 *.geojson
-*.DS_Store
 *.skeleton
 *.h5
 *.grd
+
+# torch
+*.pth
+*.pt
+
+# images
+*.png
+*.jpg
+*.jpeg
 
 # web
 *.html
 
 # cache
 *.pyc
+*.DS_Store
+
+#dump
+_dump/

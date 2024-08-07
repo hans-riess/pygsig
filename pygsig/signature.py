@@ -7,12 +7,14 @@ from torch import Tensor
 from torch_geometric.nn.aggr import Aggregation
 import torch_geometric.transforms as T
 from torch_geometric.data import Data
-from torch_geometric_temporal import StaticGraphTemporalSignal
-from signatory import extract_signature_term,multi_signature_combine, signature_channels, Signature, Augment
+from signatory import multi_signature_combine
+from signatory import extract_signature_term, signature_channels
+from signatory import Signature, LogSignature
+from pygsig.graph import GeometricGraph, CustomStaticGraphTemporalSignal
 
-class LinearTensor(nn.Module):
+class Linear(nn.Module):
     def __init__(self,in_channels,out_channels,depth,bias=True):
-        super(LinearTensor, self).__init__()
+        super(Linear, self).__init__()
         self.depth = depth
         self.in_features = in_channels
         self.out_features = out_channels
@@ -43,14 +45,18 @@ class LinearTensor(nn.Module):
             bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
             nn.init.uniform_(self.bias, -bound, bound)
     def forward(self,x):
-        return torch.einsum(self.einsum_exp, x, *[self.weight for _ in range(self.depth)]) + self.bias
+        if self.bias == True:
+            return torch.einsum(self.einsum_exp, x, *[self.weight for _ in range(self.depth)]) + self.bias
+        else: 
+            return torch.einsum(self.einsum_exp, x, *[self.weight for _ in range(self.depth)])
+
 
 class SignatureLinear(nn.Module):
-    def __init__(self,in_channels,out_channels,depth):
+    def __init__(self,in_channels,out_channels,depth,bias=True):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.linear = nn.ModuleList([LinearTensor(in_channels,out_channels,d) for d in range(1,depth+1)])
+        self.linear = nn.ModuleList([Linear(in_channels,out_channels,d,bias) for d in range(1,depth+1)])
         self.depth = depth
     def forward(self,x):
         outputs = []
@@ -95,23 +101,25 @@ class SignatureAggregation(gnn.aggr.Aggregation):
         pass
 
 class SignatureFeatures(T.BaseTransform):
-    def __init__(self, num_node_features,sig_depth=3,augment=True,normalize=True):
+    def __init__(self, num_node_features,sig_depth=3,normalize=True,log_signature=False):
         super().__init__()
         self.sig_depth = sig_depth
-        self.augment = augment
         self.normalize = normalize
-        self.signature = Signature(depth=sig_depth,)
+        if log_signature:
+            self.signature = LogSignature(depth=sig_depth)
+        else:
+            self.signature = Signature(depth=sig_depth)
 
-    def forward(self, dataset: StaticGraphTemporalSignal) -> Data:
+    def forward(self, dataset: CustomStaticGraphTemporalSignal) -> Data:
         y = dataset[-1].y
-        x = torch.zeros([dataset.num_nodes,dataset.snapshot_count,dataset.num_node_features])
+        x_seq = torch.zeros([dataset.num_nodes,dataset.snapshot_count,dataset.num_node_features])
         pos = dataset[-1].pos
         for time,feature in enumerate(dataset.features):
-            x[:,time,:] = torch.tensor(feature)
-        x = self.signature(x)
+            x_seq[:,time,:] = torch.tensor(feature)
+        x = self.signature(x_seq)       
         if self.normalize:
             std_x = torch.std(x,dim=0)
             mean_x = torch.mean(x,dim=0)
             x = (x - mean_x)/std_x
-        dataset_static = Data(x=x,y=y,edge_index=dataset.edge_index,edge_attr=dataset.edge_weight,pos=pos)
+        dataset_static = GeometricGraph(x=x,y=y,edge_index=dataset.edge_index,edge_weight=dataset.edge_weight,pos=pos)
         return dataset_static

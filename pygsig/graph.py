@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import torch_geometric.transforms as T
 from torch_geometric.data import Data
-from torch_geometric_temporal.signal import StaticGraphTemporalSignal
+import torch_geometric_temporal as tgnn
 from typing import Sequence,Union
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -50,38 +50,41 @@ class KernelRadiusGraph(T.BaseTransform):
         return self.transform(graph)
 
 class GeometricGraph(Data):
-    def __init__(self, edge_index, edge_attr, pos, x=None, y=None, **kwargs):
-        super().__init__(self, edge_index=edge_index, edge_attr=edge_attr, x=x, y=y, pos=pos, **kwargs)
+    def __init__(self, edge_index, x, y, edge_weight,pos):
+        super().__init__(edge_index=edge_index, edge_attr=edge_weight,x=x,y=y,pos=pos)
 
     def draw_graph(self):
         from torch_geometric.utils import to_networkx
         import networkx as nx
         import matplotlib.pyplot as plt
-        pos_array = self.pos.numpy()
-        pos_array = (pos_array - np.min(pos_array,axis=0))/(np.max(pos_array,axis=0)-np.min(pos_array,axis=0))
-        pos_array = (pos_array - np.min(pos_array,axis=0))/(np.max(pos_array,axis=0)-np.min(pos_array,axis=0))
-        pos = {i: (p[0], p[1]) for i, p in enumerate(pos_array)}
         nx_graph = to_networkx(self,to_undirected=True)
+        if self.pos is None:
+            pos = nx.spring_layout(nx_graph)
+        else:
+            pos_array = self.pos.numpy()
+            pos_array = (pos_array - np.min(pos_array,axis=0))/(np.max(pos_array,axis=0)-np.min(pos_array,axis=0))
+            pos_array = (pos_array - np.min(pos_array,axis=0))/(np.max(pos_array,axis=0)-np.min(pos_array,axis=0))
+            pos = {i: (p[0], p[1]) for i, p in enumerate(pos_array)}
         nx.draw_networkx_nodes(nx_graph, pos, node_size=10)
         nx.draw_networkx_edges(nx_graph, pos, alpha=0.5)
         plt.show()
         
 
-class CustomStaticGraphTemporalSignal(StaticGraphTemporalSignal):
+class StaticGraphTemporalSignal(tgnn.signals.StaticGraphTemporalSignal):
     def __init__(self,
                 edge_index: Edge_Index,
                 edge_weight: Edge_Weight,
                 features: Node_Features,
                 targets: Targets,
-                positions: Positions,
+                positions: Positions = None,
                 **kwargs: Additional_Features
     ):
         super().__init__(edge_index, edge_weight, features, targets)
-        # self.graph = GeometricGraph(edge_index=edge_index,edge_attr=edge_weight,pos= positions)
         self.positions = positions
         self.num_nodes = self.features[0].shape[0]
         self.num_node_features = self.features[0].shape[-1]
-        # self.y = super()._get_target(-1)
+        self.y = self._get_target(-1)
+        self.graph = GeometricGraph(edge_index=edge_index,edge_weight=edge_weight,pos=positions,x=None,y=None)
     
     def _get_target(self, time_index: int):
         if self.targets[time_index] is None:
@@ -128,12 +131,6 @@ class CustomStaticGraphTemporalSignal(StaticGraphTemporalSignal):
         else:
             return X,y
 
-    def plot_graph(self):
-        import networkx as nx
-        import plotly.graph_objs as go
-        import numpy as np
-
-        
 class RandomNodeSplit(T.BaseTransform):
     def __init__(self,train_ratio,eval_ratio=0.0,num_splits=1,unlabeled_data=False,class_weights=False,seed=None):
         self.num_splits = num_splits
@@ -182,7 +179,7 @@ class RandomNodeSplit(T.BaseTransform):
                             num_splits=self.num_splits,class_weights=class_weights,
                             label_mask=label_mask, train_mask=train_mask, eval_mask=eval_mask, test_mask=test_mask)
             if isinstance(data, CustomStaticGraphTemporalSignal):
-                return CustomStaticGraphTemporalSignal(edge_index=data.edge_index, edge_weight=data.edge_weight, features=data.features, targets=data.targets, positions=data.positions,
+                return StaticGraphTemporalSignal(edge_index=data.edge_index, edge_weight=data.edge_weight, features=data.features, targets=data.targets, positions=data.positions,
                                                 num_splits=self.num_splits,class_weights=[class_weights]*data.snapshot_count,label_masks=[label_mask]*data.snapshot_count, 
                                                 train_masks=[train_mask]*data.snapshot_count,eval_masks=[eval_mask]*data.snapshot_count, test_masks=[test_mask]*data.snapshot_count)
         else:
@@ -190,14 +187,8 @@ class RandomNodeSplit(T.BaseTransform):
                 return Data(x=data.x, edge_index=data.edge_index, edge_attr=data.edge_attr, y=data.y, pos=data.pos,
                             num_splits=self.num_splits, train_mask=train_mask, eval_mask=eval_mask, test_mask=test_mask)
             if isinstance(data, CustomStaticGraphTemporalSignal):
-                return CustomStaticGraphTemporalSignal(edge_index=data.edge_index, edge_weight=data.edge_weight, features=data.features, targets=data.targets, positions=data.positions,
+                return StaticGraphTemporalSignal(edge_index=data.edge_index, edge_weight=data.edge_weight, features=data.features, targets=data.targets, positions=data.positions,
                                                 num_splits=self.num_splits, 
                                                 train_masks=[train_mask]*data.snapshot_count,eval_masks=[eval_mask]*data.snapshot_count, test_masks=[test_mask]*data.snapshot_count)
 
 
-class RandomNodeCV(T.BaseTransform):
-    def __init__(self,num_splits=1,unlabeled_data=False,seed=None):
-        pass
-
-    def forward(self, data: Union[Data, StaticGraphTemporalSignal]):
-        pass
