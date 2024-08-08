@@ -115,7 +115,6 @@ class GATRegression(nn.Module):
             x = layer(x, edge_index, edge_weight)
             if i < self.num_layers - 1:
                 x = F.relu(x)
-                # x = self.dropout(x)
         return F.sigmoid(x)
 
 
@@ -132,8 +131,8 @@ class MLPRegression(nn.Module):
             self.linear.append(nn.Linear(self.num_channels[l], self.num_channels[l + 1]))
 
     def reset_parameters(self):
-        self.recurrent.reset_parameters()
-        self.lin.reset_parameters()
+        for layer in self.linear:
+            layer.reset_parameters()
 
     def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Optional[Tensor] = None) -> Tensor:
         for i, layer in enumerate(self.linear):

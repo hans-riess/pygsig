@@ -10,7 +10,7 @@ from torch_geometric.data import Data
 from signatory import multi_signature_combine
 from signatory import extract_signature_term, signature_channels
 from signatory import Signature, LogSignature
-from pygsig.graph import GeometricGraph, CustomStaticGraphTemporalSignal
+from pygsig.graph import StaticGraphTemporalSignal, GeometricGraph
 
 class Linear(nn.Module):
     def __init__(self,in_channels,out_channels,depth,bias=True):
@@ -110,7 +110,7 @@ class SignatureFeatures(T.BaseTransform):
         else:
             self.signature = Signature(depth=sig_depth)
 
-    def forward(self, dataset: CustomStaticGraphTemporalSignal) -> Data:
+    def forward(self, dataset: StaticGraphTemporalSignal) -> Data:
         y = dataset[-1].y
         x_seq = torch.zeros([dataset.num_nodes,dataset.snapshot_count,dataset.num_node_features])
         pos = dataset[-1].pos

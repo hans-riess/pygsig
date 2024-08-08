@@ -70,7 +70,7 @@ class GeometricGraph(Data):
         plt.show()
         
 
-class StaticGraphTemporalSignal(tgnn.signals.StaticGraphTemporalSignal):
+class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
     def __init__(self,
                 edge_index: Edge_Index,
                 edge_weight: Edge_Weight,
@@ -131,64 +131,13 @@ class StaticGraphTemporalSignal(tgnn.signals.StaticGraphTemporalSignal):
         else:
             return X,y
 
-class RandomNodeSplit(T.BaseTransform):
-    def __init__(self,train_ratio,eval_ratio=0.0,num_splits=1,unlabeled_data=False,class_weights=False,seed=None):
-        self.num_splits = num_splits
-        self.train_ratio = train_ratio
-        self.eval_ratio = eval_ratio
-        self.unlabeled_data = unlabeled_data
-        self.class_weights = class_weights
-        self.seed = seed
-        self.base_generator = torch.Generator().manual_seed(self.seed) if self.seed is not None else None
+def split_nodes(num_nodes, num_splits,seed=29):
+    np.random.seed(seed)
+    indices = np.random.permutation(num_nodes)
     
-    def _get_classes(self,y):
-        classes = torch.unique(y).numpy()
-        return np.delete(classes,np.where(classes == -1))
-
-    def forward(self, data: Union[Data, StaticGraphTemporalSignal]):
-        num_labeled_nodes = (data.y != -1).sum().item()
-        self.train_size = int(self.train_ratio * num_labeled_nodes)
-        self.eval_size = int(self.eval_ratio * num_labeled_nodes)
-        self.test_size = num_labeled_nodes - self.train_size - self.eval_size
-
-        train_mask = torch.zeros([self.num_splits, data.num_nodes], dtype=torch.bool)
-        eval_mask = torch.zeros([self.num_splits, data.num_nodes], dtype=torch.bool)
-        test_mask = torch.zeros([self.num_splits, data.num_nodes], dtype=torch.bool)
-        label_mask = (data.y != -1)
-
-        labeled_indices = torch.where(label_mask)[0]
-        if self.base_generator is not None:
-            perm = torch.stack([torch.randperm(labeled_indices.size(0),generator=self.base_generator.manual_seed(self.seed+i)) for i in range(self.num_splits)])
-        else:
-            perm = torch.stack([torch.randperm(labeled_indices.size(0)) for _ in range(self.num_splits)])
-
-        for i in range(self.num_splits):
-            train_mask[i, labeled_indices[perm[i, :self.train_size]]] = True
-            eval_mask[i, labeled_indices[perm[i, self.train_size:self.train_size + self.eval_size]]] = True
-            test_mask[i, labeled_indices[perm[i, self.train_size + self.eval_size:]]] = True
-        
-        # class weights
-        if self.class_weights and self.unlabeled_data:
-            classes = self._get_classes(data.y)
-            class_weights = torch.zeros([self.num_splits,len(classes)])
-            for i in range(self.num_splits):
-                class_weights[i] = torch.Tensor(compute_class_weight(class_weight='balanced',classes=classes,y=data.y[train_mask[i]].numpy()))
-
-            if isinstance(data, Data):
-                return Data(x=data.x, edge_index=data.edge_index, edge_attr=data.edge_attr, y=data.y, pos=data.pos,
-                            num_splits=self.num_splits,class_weights=class_weights,
-                            label_mask=label_mask, train_mask=train_mask, eval_mask=eval_mask, test_mask=test_mask)
-            if isinstance(data, CustomStaticGraphTemporalSignal):
-                return StaticGraphTemporalSignal(edge_index=data.edge_index, edge_weight=data.edge_weight, features=data.features, targets=data.targets, positions=data.positions,
-                                                num_splits=self.num_splits,class_weights=[class_weights]*data.snapshot_count,label_masks=[label_mask]*data.snapshot_count, 
-                                                train_masks=[train_mask]*data.snapshot_count,eval_masks=[eval_mask]*data.snapshot_count, test_masks=[test_mask]*data.snapshot_count)
-        else:
-            if isinstance(data, Data):
-                return Data(x=data.x, edge_index=data.edge_index, edge_attr=data.edge_attr, y=data.y, pos=data.pos,
-                            num_splits=self.num_splits, train_mask=train_mask, eval_mask=eval_mask, test_mask=test_mask)
-            if isinstance(data, CustomStaticGraphTemporalSignal):
-                return StaticGraphTemporalSignal(edge_index=data.edge_index, edge_weight=data.edge_weight, features=data.features, targets=data.targets, positions=data.positions,
-                                                num_splits=self.num_splits, 
-                                                train_masks=[train_mask]*data.snapshot_count,eval_masks=[eval_mask]*data.snapshot_count, test_masks=[test_mask]*data.snapshot_count)
-
-
+    splits = []
+    for i in range(num_splits):
+        test_indices = indices[i::num_splits]  # Disjoint test set for each split
+        train_indices = np.setdiff1d(indices, test_indices)
+        splits.append((train_indices, test_indices))
+    return splits
