@@ -12,10 +12,12 @@
 *.pth
 *.pt
 
-# images
+# images / videos
 *.png
 *.jpg
 *.jpeg
+*.gif
+*.mp4
 
 # web
 *.html
