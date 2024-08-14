@@ -137,7 +137,9 @@ def split_nodes(num_nodes, num_splits,seed=29):
     
     splits = []
     for i in range(num_splits):
-        test_indices = indices[i::num_splits]  # Disjoint test set for each split
-        train_indices = np.setdiff1d(indices, test_indices)
-        splits.append((train_indices, test_indices))
+        nontrain_indices = indices[i::num_splits]  # Disjoint test set for each split
+        train_indices = np.setdiff1d(indices, nontrain_indices)
+        test_indices = nontrain_indices[:len(nontrain_indices)//2]
+        eval_indices = nontrain_indices[len(nontrain_indices)//2:]
+        splits.append((train_indices, eval_indices, test_indices))
     return splits

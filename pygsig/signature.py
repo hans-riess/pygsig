@@ -101,10 +101,11 @@ class SignatureAggregation(gnn.aggr.Aggregation):
         pass
 
 class SignatureFeatures(T.BaseTransform):
-    def __init__(self, num_node_features,sig_depth=3,normalize=True,log_signature=False):
+    def __init__(self, sig_depth=3,normalize=True,log_signature=False,augment=False):
         super().__init__()
         self.sig_depth = sig_depth
         self.normalize = normalize
+        self.augment = augment
         if log_signature:
             self.signature = LogSignature(depth=sig_depth)
         else:
@@ -112,11 +113,41 @@ class SignatureFeatures(T.BaseTransform):
 
     def forward(self, dataset: StaticGraphTemporalSignal) -> Data:
         y = dataset[-1].y
-        x_seq = torch.zeros([dataset.num_nodes,dataset.snapshot_count,dataset.num_node_features])
         pos = dataset[-1].pos
-        for time,feature in enumerate(dataset.features):
-            x_seq[:,time,:] = torch.tensor(feature)
+
+        if self.augment:
+            x_seq = torch.zeros([dataset.num_nodes,dataset.snapshot_count,dataset.num_node_features+1])
+            for time,feature in enumerate(dataset.features):
+                tensor_feature = torch.tensor(feature)
+                tensor_time = time * torch.ones(dataset.num_nodes,1)
+                x_seq[:,time,:] = torch.concat([tensor_feature,tensor_time],dim=-1)
+        else:
+            x_seq = torch.zeros([dataset.num_nodes,dataset.snapshot_count,dataset.num_node_features])
+            for time,feature in enumerate(dataset.features):
+                x_seq[:,time,:] = torch.tensor(feature)
         x = self.signature(x_seq)       
+        if self.normalize:
+            std_x = torch.std(x,dim=0)
+            mean_x = torch.mean(x,dim=0)
+            x = (x - mean_x)/std_x
+        dataset_static = GeometricGraph(x=x,y=y,edge_index=dataset.edge_index,edge_weight=dataset.edge_weight,pos=pos)
+        return dataset_static
+
+
+class StatFeatures(T.BaseTransform):
+    def __init__(self, normalize=True):
+        super().__init__()
+        self.normalize = normalize
+
+    def forward(self, dataset: StaticGraphTemporalSignal) -> Data:
+        y = dataset[-1].y
+        pos = dataset[-1].pos
+        data_matrix = torch.stack([ dataset[t].x for t in range(dataset.snapshot_count)])
+        x = torch.stack([torch.quantile(data_matrix,dim=0,q=0.00),
+                            torch.quantile(data_matrix,dim=0,q=0.25),
+                            torch.quantile(data_matrix,dim=0,q=0.50),
+                            torch.quantile(data_matrix,dim=0,q=0.75),
+                            torch.quantile(data_matrix,dim=0,q=1.00)],dim=1).reshape(-1,5*dataset.num_node_features)  
         if self.normalize:
             std_x = torch.std(x,dim=0)
             mean_x = torch.mean(x,dim=0)

@@ -13,15 +13,19 @@ class GConvGRURegression(nn.Module):
         super().__init__()
         self.recurrent = GConvGRU(num_channels[0], num_channels[-2], K=K)
         self.lin = nn.Linear(num_channels[-2], num_channels[-1])
-
+                
     def reset_parameters(self):
-        self.recurrent.reset_parameters()
+        for weight in self.recurrent.parameters():
+            if weight.dim() > 1:
+                nn.init.xavier_uniform_(weight)
+            else:
+                nn.init.zeros_(weight)
         self.lin.reset_parameters()
         
-    def forward(self, x: Tensor, edge_index: Tensor, edge_weight=None)->Tensor:
+    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_weight=None) -> torch.Tensor:
         x = self.recurrent(x, edge_index, edge_weight)
         x = self.lin(x)
-        return F.sigmoid(x)
+        return torch.sigmoid(x)
 
 class GConvLSTMRegression(nn.Module):
     def __init__(self, num_channels, K):
@@ -72,7 +76,7 @@ class ChebNetRegression(nn.Module):
         self.K = K
         self.conv = nn.ModuleList()
         for l in range(self.num_layers):
-            self.conv.append(gnn.ChebConv(self.num_channels[l], self.num_channels[l + 1],self.K))
+            self.conv.append(gnn.ChebConv(self.num_channels[l], self.num_channels[l + 1],self.K,normalization=None))
     
     def reset_parameters(self):
         for layer in self.conv:

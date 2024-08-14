@@ -28,3 +28,6 @@
 
 #dump
 _dump/
+
+#plots
+plots/
