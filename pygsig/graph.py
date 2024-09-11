@@ -131,7 +131,7 @@ class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
         else:
             return X,y
 
-def split_nodes(num_nodes, num_splits,seed=29):
+def split_nodes(num_nodes, num_splits,test_ratio = 0.5, seed=29):
     np.random.seed(seed)
     indices = np.random.permutation(num_nodes)
     
@@ -139,7 +139,7 @@ def split_nodes(num_nodes, num_splits,seed=29):
     for i in range(num_splits):
         nontrain_indices = indices[i::num_splits]  # Disjoint test set for each split
         train_indices = np.setdiff1d(indices, nontrain_indices)
-        test_indices = nontrain_indices[:len(nontrain_indices)//2]
-        eval_indices = nontrain_indices[len(nontrain_indices)//2:]
+        test_indices = nontrain_indices[:int(test_ratio *len(nontrain_indices))]
+        eval_indices = nontrain_indices[int(test_ratio *len(nontrain_indices)):]
         splits.append((train_indices, eval_indices, test_indices))
     return splits

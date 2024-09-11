@@ -1,6 +1,6 @@
 
 import torch
-from pygsig.graph import KernelKNNGraph,KernelRadiusGraph,CustomStaticGraphTemporalSignal
+from pygsig.graph import KernelKNNGraph,KernelRadiusGraph,StaticGraphTemporalSignal
 from torch_geometric.data import Data
 import torch_geometric.transforms as T
 import pandas as pd
@@ -155,7 +155,8 @@ class SubductionZone(object):
 
         # Part 2: create the graph
         positions = torch.stack([torch.tensor(gdf_location.geometry.x.values),
-                                 torch.tensor(gdf_location.geometry.y.values)]).T
+                                 torch.tensor(gdf_location.geometry.y.values),
+                                 torch.tensor(gdf_location.geometry.z.values)]).T
         points = Data(pos=positions)
         if (k is not None) and (bandwidth is not None):
             transform = KernelKNNGraph(k=k,bandwidth=bandwidth)
@@ -182,7 +183,7 @@ class SubductionZone(object):
             else:
                 features.append(group[['e','n','u']].values)
 
-        return CustomStaticGraphTemporalSignal(
+        return StaticGraphTemporalSignal(
             edge_index=graph.edge_index,
             edge_weight=graph.edge_attr,
             features=features,

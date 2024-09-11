@@ -142,7 +142,7 @@ class StatFeatures(T.BaseTransform):
     def forward(self, dataset: StaticGraphTemporalSignal) -> Data:
         y = dataset[-1].y
         pos = dataset[-1].pos
-        data_matrix = torch.stack([ dataset[t].x for t in range(dataset.snapshot_count)])
+        data_matrix = torch.jstack([ dataset[t].x for t in range(dataset.snapshot_count)])
         x = torch.stack([torch.quantile(data_matrix,dim=0,q=0.00),
                             torch.quantile(data_matrix,dim=0,q=0.25),
                             torch.quantile(data_matrix,dim=0,q=0.50),

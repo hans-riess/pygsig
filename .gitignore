@@ -8,10 +8,6 @@
 *.h5
 *.grd
 
-# torch
-*.pth
-*.pt
-
 # images / videos
 *.png
 *.jpg
@@ -25,9 +21,14 @@
 # cache
 *.pyc
 *.DS_Store
+.pytest_cache/
 
 #dump
 _dump/
 
 #plots
 plots/
+
+# VS Code
+.vscode/
+*.code-workspace
