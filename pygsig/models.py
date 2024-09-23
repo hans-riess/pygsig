@@ -67,16 +67,15 @@ class GCNRegression(nn.Module):
                 x = self.dropout(x)
         return F.sigmoid(x)
 
-class ChebNetRegression(nn.Module):
-    def __init__(self, num_channels,K=2):
+class GCNClassification(nn.Module):
+    def __init__(self, num_channels):
         super().__init__()
         self.num_channels = num_channels
         self.num_layers = len(num_channels) - 1
-        self.dropout = nn.Dropout()
-        self.K = K
         self.conv = nn.ModuleList()
+        self.dropout = nn.Dropout()
         for l in range(self.num_layers):
-            self.conv.append(gnn.ChebConv(self.num_channels[l], self.num_channels[l + 1],self.K,normalization=None))
+            self.conv.append(gnn.GCNConv(self.num_channels[l], self.num_channels[l + 1]))
     
     def reset_parameters(self):
         for layer in self.conv:
@@ -88,38 +87,7 @@ class ChebNetRegression(nn.Module):
             if i < self.num_layers - 1:
                 x = F.relu(x)
                 x = self.dropout(x)
-        return F.sigmoid(x)
-
-class GATRegression(nn.Module):
-    def __init__(self, num_channels,num_heads=1,concat=True):
-        super().__init__()
-        self.num_channels = num_channels
-        self.num_layers = len(num_channels) - 1
-        self.dropout = nn.Dropout()
-        self.num_heads = num_heads
-        self.concat = concat
-
-        self.conv = nn.ModuleList()
-        for l in range(self.num_layers):
-            if l < self.num_layers-1:
-                if self.concat:
-                    self.conv.append(gnn.GATConv(in_channels=self.num_channels[l], out_channels=self.num_channels[l + 1],heads=num_heads,concat=True))
-                    self.num_channels[l+1]*=num_heads
-                else:
-                    self.conv.append(gnn.GATConv(in_channels=self.num_channels[l], out_channels=self.num_channels[l + 1],heads=num_heads,concat=False))
-            else:
-                self.conv.append(gnn.GATConv(in_channels=self.num_channels[l], out_channels=self.num_channels[l + 1],heads=1,concat=False))
-
-    def reset_parameters(self):
-        for layer in self.conv:
-            layer.reset_parameters()
-    
-    def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Optional[Tensor] = None) -> Tensor:
-        for i, layer in enumerate(self.conv):
-            x = layer(x, edge_index, edge_weight)
-            if i < self.num_layers - 1:
-                x = F.relu(x)
-        return F.sigmoid(x)
+        return F.softmax(x, dim=1)
 
 
 # Benchmarks

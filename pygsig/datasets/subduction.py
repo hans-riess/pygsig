@@ -7,6 +7,7 @@ import pandas as pd
 import json
 import requests
 from tqdm import tqdm
+from sklearn.preprocessing import StandardScaler
 
 class SubductionZone(object):
     def __init__(self,
@@ -62,6 +63,7 @@ class SubductionZone(object):
 
         subduct = []
         heights = []
+        depths = []
         siteIDs = []
         geometries = []
         labels = []
@@ -80,9 +82,10 @@ class SubductionZone(object):
             depth = raster[row, col]*1e3 # Convert to meters
             nonlinear = label_df[label_df['siteID'] == siteID]['nonlinear']
             siteIDs.append(siteID)
-            subduct.append(depth)
+            depths.append(depth)
             geometries.append(Point(lon_coord, lat_coord,depth))
             heights.append(height)
+
             if nonlinear.empty:
                 label = -1
             else:
@@ -102,8 +105,8 @@ class SubductionZone(object):
                 marker_symbol.append('circle')
 
         # Load data from GeoNet API
-        gdf_location = gpd.GeoDataFrame({'siteID': siteIDs, 
-                                            'depth': subduct, 
+        gdf_location = gpd.GeoDataFrame({   'siteID': siteIDs, 
+                                            'depth': depths, 
                                             'height': heights, 
                                             'nonlinear': labels,
                                             'marker-color': marker_colors,
@@ -156,7 +159,7 @@ class SubductionZone(object):
         # Part 2: create the graph
         positions = torch.stack([torch.tensor(gdf_location.geometry.x.values),
                                  torch.tensor(gdf_location.geometry.y.values),
-                                 torch.tensor(gdf_location.geometry.z.values)]).T
+                                 ]).T
         points = Data(pos=positions)
         if (k is not None) and (bandwidth is not None):
             transform = KernelKNNGraph(k=k,bandwidth=bandwidth)
@@ -170,6 +173,7 @@ class SubductionZone(object):
         graph = transform(points)
 
         # Part 3: attach the features and targets
+
         features = []
         targets = []
         for _,group in gdf_data.groupby('t'): # loop through the data by timestamp
