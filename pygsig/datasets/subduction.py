@@ -61,7 +61,6 @@ class SubductionZone(object):
             row = int((lat - transform.f) / transform.e)
             return row, col
 
-        subduct = []
         heights = []
         depths = []
         siteIDs = []
@@ -145,7 +144,7 @@ class SubductionZone(object):
         gdf_location = gdf_location.to_crs("EPSG:2193") # Convert to NZTM
         return gdf_data,gdf_location
 
-    def load_data(self, task_name='nonlinear',include_time=False, k=None, r= None, bandwidth = None):
+    def load_data(self, task_name='nonlinear',include_time=False, k=None, r= None):
         # Checks
         if task_name not in ['depth','nonlinear']:
             raise ValueError('task_name must be either "depth" or "nonlinear"')
@@ -161,14 +160,11 @@ class SubductionZone(object):
                                  torch.tensor(gdf_location.geometry.y.values),
                                  ]).T
         points = Data(pos=positions)
-        if (k is not None) and (bandwidth is not None):
-            transform = KernelKNNGraph(k=k,bandwidth=bandwidth)
-        elif (r is not None) and (bandwidth is not None):
-            transform = T.Compose([KernelRadiusGraph(r=r,bandwidth=bandwidth),T.RemoveIsolatedNodes()])
-        elif (k is not None) and (bandwidth is None):
+
+        if k is not None:
             transform = T.KNNGraph(k=k,force_undirected=True,loop=False)
-        elif (r is not None) and (bandwidth is None):
-            transform = T.Compose([T.RadiusGraph(r=r,loop=False),T.RemoveIsolatedNodes()])
+        elif r is not None:
+            transform = T.RadiusGraph(r=r,loop=False)
 
         graph = transform(points)
 

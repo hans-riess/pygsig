@@ -64,7 +64,27 @@ class GCNRegression(nn.Module):
             x = layer(x, edge_index, edge_weight)
             if i < self.num_layers - 1:
                 x = F.relu(x)
-                x = self.dropout(x)
+        return F.sigmoid(x)
+
+class GCNShallowRegression(nn.Module):
+    def __init__(self, num_channels):
+        super().__init__()
+        if len(num_channels)    != 3:
+            raise ValueError("The number of channels must be 3")
+        self.num_channels = num_channels
+        self.num_layers = len(num_channels) - 1
+        self.conv = gnn.GCNConv(self.num_channels[0], self.num_channels[-1])
+        self.linear = nn.Linear(self.num_channels[-1], 1)
+        self.dropout = nn.Dropout()
+    
+    def reset_parameters(self):
+        self.conv.reset_parameters()
+        self.linear.reset_parameters()        
+
+    def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Optional[Tensor] = None) -> Tensor:
+        x = self.conv(x, edge_index, edge_weight)
+        x = F.relu(x)
+        x = self.linear(x)
         return F.sigmoid(x)
 
 class GCNClassification(nn.Module):
@@ -86,8 +106,7 @@ class GCNClassification(nn.Module):
             x = layer(x, edge_index, edge_weight)
             if i < self.num_layers - 1:
                 x = F.relu(x)
-                x = self.dropout(x)
-        return F.softmax(x, dim=1)
+        return x
 
 
 # Benchmarks
@@ -111,8 +130,28 @@ class MLPRegression(nn.Module):
             x = layer(x)
             if i < self.num_layers - 1:
                 x = F.relu(x)
-                x = self.dropout(x)
         return F.sigmoid(x)
+
+class MLPClassification(nn.Module):
+    def __init__(self, num_channels):
+        super().__init__()
+        self.num_channels = num_channels
+        self.num_layers = len(num_channels) - 1
+        self.linear = nn.ModuleList()
+        self.dropout = nn.Dropout()
+        for l in range(self.num_layers):
+            self.linear.append(nn.Linear(self.num_channels[l], self.num_channels[l + 1]))
+
+    def reset_parameters(self):
+        for layer in self.linear:
+            layer.reset_parameters()
+
+    def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Optional[Tensor] = None) -> Tensor:
+        for i, layer in enumerate(self.linear):
+            x = layer(x)
+            if i < self.num_layers - 1:
+                x = F.relu(x)
+        return x
 
 # Our models
 class SignatureGAT(nn.Module):

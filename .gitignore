@@ -7,6 +7,7 @@
 *.skeleton
 *.h5
 *.grd
+*.xlsx
 
 # images / videos
 *.png

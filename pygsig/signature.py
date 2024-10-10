@@ -101,36 +101,61 @@ class SignatureAggregation(gnn.aggr.Aggregation):
         pass
 
 class SignatureFeatures(T.BaseTransform):
-    def __init__(self, sig_depth=3,normalize=True,log_signature=False,augment=False):
+    def __init__(self, sig_depth=3, normalize=True, log_signature=False, time_augment=False, lead_lag=False):
         super().__init__()
         self.sig_depth = sig_depth
         self.normalize = normalize
-        self.augment = augment
+        self.time_augment = time_augment
+        self.lead_lag = lead_lag
         if log_signature:
             self.signature = LogSignature(depth=sig_depth)
         else:
             self.signature = Signature(depth=sig_depth)
 
+    def lead_lag_transform(self, x_seq):
+        # Lead-lag transformation: duplicate each value and its previous timestep
+        lead_seq = x_seq[:, 1:, :]  # Lead: from time step 1 to T
+        lag_seq = x_seq[:, :-1, :]  # Lag: from time step 0 to T-1
+        lead_lag_seq = torch.cat([lead_seq, lag_seq], dim=-1)  # Concatenate lead and lag along the feature axis
+        return lead_lag_seq
+    
+    def time_augment_transform(self, x_seq):
+        # Add time as a feature
+        x_aug = torch.zeros(x_seq.shape[0], x_seq.shape[1], x_seq.shape[2] + 1)
+        for time, feature in enumerate(x_seq):
+            tensor_feature = torch.tensor(feature)
+            tensor_time = time * torch.ones(x_seq.shape[0], 1)
+            x_aug[:, time, :] = torch.cat([tensor_feature, tensor_time], dim=-1)
+        return x_aug
+
     def forward(self, dataset: StaticGraphTemporalSignal) -> Data:
         y = dataset[-1].y
         pos = dataset[-1].pos
 
-        if self.augment:
-            x_seq = torch.zeros([dataset.num_nodes,dataset.snapshot_count,dataset.num_node_features+1])
-            for time,feature in enumerate(dataset.features):
-                tensor_feature = torch.tensor(feature)
-                tensor_time = time * torch.ones(dataset.num_nodes,1)
-                x_seq[:,time,:] = torch.concat([tensor_feature,tensor_time],dim=-1)
-        else:
-            x_seq = torch.zeros([dataset.num_nodes,dataset.snapshot_count,dataset.num_node_features])
-            for time,feature in enumerate(dataset.features):
-                x_seq[:,time,:] = torch.tensor(feature)
-        x = self.signature(x_seq)       
+        # Initialize the feature sequence
+        x_seq = torch.zeros([dataset.num_nodes, dataset.snapshot_count, dataset.num_node_features])
+        for time, feature in enumerate(dataset.features):
+            x_seq[:, time, :] = torch.tensor(feature)
+        
+        # Apply lead-lag if enabled
+        if self.lead_lag:
+            x_seq = self.lead_lag_transform(x_seq)
+        
+        # Apply time augmentation if enabled
+        if self.time_augment:
+            x_seq = self.time_augment_transform(x_seq)
+
+        # Apply signature transformation
+        x = self.signature(x_seq)
+
+        # Normalize if required
         if self.normalize:
-            std_x = torch.std(x,dim=0)
-            mean_x = torch.mean(x,dim=0)
-            x = (x - mean_x)/std_x
-        dataset_static = GeometricGraph(x=x,y=y,edge_index=dataset.edge_index,edge_weight=dataset.edge_weight,pos=pos)
+            std_x = torch.std(x, dim=0)
+            mean_x = torch.mean(x, dim=0)
+            x = (x - mean_x) / std_x
+
+        # Create the static graph dataset with transformed features
+        dataset_static = GeometricGraph(x=x, y=y, edge_index=dataset.edge_index, edge_weight=dataset.edge_weight, pos=pos)
         return dataset_static
 
 

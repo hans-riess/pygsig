@@ -26,6 +26,7 @@ class GraphKernel(T.BaseTransform):
         graph.edge_attr = torch.exp(-torch.sum(graph.edge_attr**2,dim=-1)/self.bandwidth**2).float()
         return graph
 
+# TODO degug
 class KernelKNNGraph(T.BaseTransform):
     def __init__(self,k: int, bandwidth: float):
         super().__init__()
@@ -37,7 +38,7 @@ class KernelKNNGraph(T.BaseTransform):
     def forward(self, graph: Data) -> Data:
         return self.transform(graph)
 
-
+# TODO debug
 class KernelRadiusGraph(T.BaseTransform):
     def __init__(self,r: int, bandwidth: float):
         super().__init__()
@@ -52,22 +53,6 @@ class KernelRadiusGraph(T.BaseTransform):
 class GeometricGraph(Data):
     def __init__(self, edge_index, x, y, edge_weight,pos):
         super().__init__(edge_index=edge_index, edge_attr=edge_weight,x=x,y=y,pos=pos)
-
-    def draw_graph(self):
-        from torch_geometric.utils import to_networkx
-        import networkx as nx
-        import matplotlib.pyplot as plt
-        nx_graph = to_networkx(self,to_undirected=True)
-        if self.pos is None:
-            pos = nx.spring_layout(nx_graph)
-        else:
-            pos_array = self.pos.numpy()
-            pos_array = (pos_array - np.min(pos_array,axis=0))/(np.max(pos_array,axis=0)-np.min(pos_array,axis=0))
-            pos_array = (pos_array - np.min(pos_array,axis=0))/(np.max(pos_array,axis=0)-np.min(pos_array,axis=0))
-            pos = {i: (p[0], p[1]) for i, p in enumerate(pos_array)}
-        nx.draw_networkx_nodes(nx_graph, pos, node_size=10)
-        nx.draw_networkx_edges(nx_graph, pos, alpha=0.5)
-        plt.show()
         
 
 class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
