@@ -9,6 +9,10 @@
 *.grd
 *.xlsx
 
+# Pipenv
+Pipfile
+Pipfile.lock
+
 # images / videos
 *.png
 *.jpg
