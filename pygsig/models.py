@@ -66,27 +66,6 @@ class GCNRegression(nn.Module):
                 x = F.relu(x)
         return F.sigmoid(x)
 
-class GCNShallowRegression(nn.Module):
-    def __init__(self, num_channels):
-        super().__init__()
-        if len(num_channels)    != 3:
-            raise ValueError("The number of channels must be 3")
-        self.num_channels = num_channels
-        self.num_layers = len(num_channels) - 1
-        self.conv = gnn.GCNConv(self.num_channels[0], self.num_channels[-1])
-        self.linear = nn.Linear(self.num_channels[-1], 1)
-        self.dropout = nn.Dropout()
-    
-    def reset_parameters(self):
-        self.conv.reset_parameters()
-        self.linear.reset_parameters()        
-
-    def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Optional[Tensor] = None) -> Tensor:
-        x = self.conv(x, edge_index, edge_weight)
-        x = F.relu(x)
-        x = self.linear(x)
-        return F.sigmoid(x)
-
 class GCNClassification(nn.Module):
     def __init__(self, num_channels):
         super().__init__()

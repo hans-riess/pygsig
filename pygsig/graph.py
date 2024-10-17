@@ -116,7 +116,7 @@ class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
         else:
             return X,y
 
-def split_nodes(num_nodes, num_splits,test_ratio = 0.5, seed=29):
+def split_nodes(num_nodes, num_splits,test_ratio = 0.8, seed=29):
     np.random.seed(seed)
     indices = np.random.permutation(num_nodes)
     
