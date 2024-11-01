@@ -26,30 +26,6 @@ class GraphKernel(T.BaseTransform):
         graph.edge_attr = torch.exp(-torch.sum(graph.edge_attr**2,dim=-1)/self.bandwidth**2).float()
         return graph
 
-# TODO degug
-class KernelKNNGraph(T.BaseTransform):
-    def __init__(self,k: int, bandwidth: float):
-        super().__init__()
-        self.k = k
-        self.bandwidth = bandwidth
-        self.knn_graph = T.KNNGraph(self.k,force_undirected=True,loop=False,num_workers=4)
-        self.transform = T.Compose([self.knn_graph,GraphKernel(bandwidth)])
-    
-    def forward(self, graph: Data) -> Data:
-        return self.transform(graph)
-
-# TODO debug
-class KernelRadiusGraph(T.BaseTransform):
-    def __init__(self,r: int, bandwidth: float):
-        super().__init__()
-        self.r = r
-        self.bandwidth = bandwidth
-        self.radius_graph = T.RadiusGraph(r=self.r,loop=False,num_workers=4)
-        self.transform = T.Compose([self.radius_graph,GraphKernel(bandwidth)])
-    
-    def forward(self, graph: Data) -> Data:
-        return self.transform(graph)
-
 class GeometricGraph(Data):
     def __init__(self, edge_index, x, y, edge_weight,pos):
         super().__init__(edge_index=edge_index, edge_attr=edge_weight,x=x,y=y,pos=pos)
@@ -77,11 +53,11 @@ class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
         else:
             return torch.FloatTensor(self.targets[time_index])
     
-    def _get_positions(self):
-        if self.positions is None:
-            return self.positions
+    def _get_positions(self,time_index: int):
+        if self.positions[time_index] is None:
+            return self.positions[time_index]
         else:
-            return torch.DoubleTensor(self.positions)
+            return torch.DoubleTensor(self.positions[time_index])
     
     def __getitem__(self, time_index: Union[int, slice]):
         if isinstance(time_index, slice):
@@ -90,7 +66,7 @@ class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
                 self.edge_weight,
                 self.features[time_index],
                 self.targets[time_index],
-                self.positions
+                self.positions[time_index],
                 **{key: getattr(self, key)[time_index] for key in self.additional_feature_keys}
             )
         else:
@@ -98,11 +74,11 @@ class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
             edge_index = self._get_edge_index()
             edge_weight = self._get_edge_weight()
             y = self._get_target(time_index)
-            pos = self._get_positions()
+            pos = self._get_positions(time_index)
             additional_features = self._get_additional_features(time_index)
 
             snapshot = Data(x=x, edge_index=edge_index, edge_attr=edge_weight,
-                            y=y,pos=pos, **additional_features)
+                            y=y, pos=pos, **additional_features)
         return snapshot
 
     def _get_feature_matrix(self,numpy=False):

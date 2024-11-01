@@ -1,13 +1,12 @@
-
 import torch
-from pygsig.graph import KernelKNNGraph,KernelRadiusGraph,StaticGraphTemporalSignal
+from pygsig.graph import StaticGraphTemporalSignal
 from torch_geometric.data import Data
 import torch_geometric.transforms as T
 import pandas as pd
 import json
 import requests
 from tqdm import tqdm
-from sklearn.preprocessing import StandardScaler
+import numpy as np
 
 class SubductionZone(object):
     def __init__(self,
@@ -18,8 +17,9 @@ class SubductionZone(object):
                  data_path='../datasets/subduction/site_data.geojson',
                  start_date=pd.Timestamp('2010-01-01 11:59:00+0000', tz='UTC'),
                  end_date=pd.Timestamp('2023-12-15 11:59:00+0000', tz='UTC'),
-                 redownload=True
-        ):
+                 task='classification',
+                 download=False
+                ):
         self.start_date = start_date
         self.end_date = end_date
         self.poly_path = poly_path
@@ -27,10 +27,17 @@ class SubductionZone(object):
         self.rast_path = rast_path
         self.site_path = site_path
         self.data_path = data_path
-        if redownload:
-            self._download()
+        if download:
+            self.download()
+        self.load_data()
+        self.X = np.stack([group[['e','n','u']].values for t,group in self.gdf_data.groupby('t')]).transpose(1,0,-1)
+        if task == 'classification':
+            self.y = np.stack([ group.label.unique() for _,group in self.gdf_data.groupby('siteID')])
+        if task == 'regression':
+            self.y = np.stack([ group.depth.unique() for _,group in self.gdf_data.groupby('siteID')])
 
-    def _download(self):
+    def download(self):
+
         import geopandas as gpd
         import rasterio
         from shapely.geometry import Point, Polygon
@@ -70,51 +77,54 @@ class SubductionZone(object):
         marker_size = []
         marker_symbol = []
 
+        # fetch the labels and features for the sites
         for _, val in enumerate(json_data):
             geometry = val['geometry']
             properties = val['properties']
-            lat_coord = geometry['coordinates'][1]
-            lon_coord = geometry['coordinates'][0]
-            row, col = geo_to_raster_idx(lat_coord, lon_coord, transform)
             siteID = properties['siteID']
-            height = properties['height']
-            depth = raster[row, col]*1e3 # Convert to meters
             nonlinear = label_df[label_df['siteID'] == siteID]['nonlinear']
-            siteIDs.append(siteID)
-            depths.append(depth)
-            geometries.append(Point(lon_coord, lat_coord,depth))
-            heights.append(height)
-
             if nonlinear.empty:
-                label = -1
+                continue
             else:
                 label = nonlinear.values[0]
-            labels.append(label)
-            if label == 1:
-                marker_colors.append("red")
-                marker_size.append("small")
-                marker_symbol.append('square')
-            if label == 0:
-                marker_colors.append("black")
-                marker_size.append("small")
-                marker_symbol.append('circle')
-            if label == -1:
-                marker_colors.append("grey")
-                marker_size.append("small")
-                marker_symbol.append('circle')
+                lat_coord = geometry['coordinates'][1]
+                lon_coord = geometry['coordinates'][0]
+                row, col = geo_to_raster_idx(lat_coord, lon_coord, transform)
+                siteID = properties['siteID']
+                height = properties['height']
+                depth = raster[row, col]*1e3 # Convert to meters
+                siteIDs.append(siteID)
+                depths.append(depth)
+                geometries.append(Point(lon_coord, lat_coord,depth))
+                heights.append(height)
+                labels.append(label)
 
-        # Load data from GeoNet API
-        gdf_location = gpd.GeoDataFrame({   'siteID': siteIDs, 
+                # Markers for the map
+                if label == 1:
+                    marker_colors.append("red")
+                    marker_size.append("small")
+                    marker_symbol.append('square')
+                if label == 0:
+                    marker_colors.append("black")
+                    marker_size.append("small")
+                    marker_symbol.append('circle')
+                if label == -1:
+                    marker_colors.append("grey")
+                    marker_size.append("small")
+                    marker_symbol.append('circle')
+        # save location data in a .geojson file
+        self.gdf_location = gpd.GeoDataFrame({   'siteID': siteIDs, 
                                             'depth': depths, 
                                             'height': heights, 
-                                            'nonlinear': labels,
+                                            'label': labels,
                                             'marker-color': marker_colors,
                                             'marker-size': marker_size,
                                             'marker-symbol': marker_symbol,
                                             'geometry': geometries}, crs="EPSG:4326")
-        gdf_location.to_file(self.site_path, driver="GeoJSON")
-        gdf_location = gdf_location.to_crs("EPSG:2193") # Convert to NZTM
+        self.gdf_location.to_file(self.site_path, driver="GeoJSON")
+        self.gdf_location = self.gdf_location.to_crs("EPSG:2193") # Convert to NZTM
         
+        # Load data from GeoNet API
         endpoint = 'observation'
         df = pd.DataFrame()
         common_timestamps = pd.date_range(self.start_date, self.end_date, freq='D')
@@ -131,36 +141,28 @@ class SubductionZone(object):
 
         df.reset_index(inplace=True)
         df = df.rename(columns={'index': 't'})
-        df_data = df[['siteID', 't', 'e', 'n', 'u']]
-        gdf_data = pd.merge(df_data, gdf_location, on='siteID', how='left') # Merge with location data
-        gdf_data[['e', 'n', 'u']] = gdf_data[['e', 'n', 'u']].ffill().bfill() # Fill missing values with backward fill and forward fill
-        gdf_data = gpd.GeoDataFrame(gdf_data, geometry='geometry', crs="EPSG:4326") # WGS 84
+        self.df_data = df[['siteID', 't', 'e', 'n', 'u']]
+        self.gdf_data = pd.merge(self.df_data, self.gdf_location, on='siteID', how='left') # Merge with location data
+        self.gdf_data[['e', 'n', 'u']] = self.gdf_data[['e', 'n', 'u']].ffill().bfill() # Fill missing values with backward fill and forward fill
+        gdf_data = gpd.GeoDataFrame(self.gdf_data, geometry='geometry', crs="EPSG:4326") # WGS 84
         gdf_data.to_file(self.data_path, driver="GeoJSON") # Save to file
 
-    def _from_file(self):
+    def load_data(self):
         import geopandas as gpd
-        gdf_data = gpd.read_file(self.data_path,driver='GeoJSON')
-        gdf_location = gpd.read_file(self.site_path, driver="GeoJSON")
-        gdf_location = gdf_location.to_crs("EPSG:2193") # Convert to NZTM
-        return gdf_data,gdf_location
+        self.gdf_data = gpd.read_file(self.data_path,driver='GeoJSON')
+        self.gdf_location = gpd.read_file(self.site_path, driver="GeoJSON").to_crs("EPSG:2193")
 
-    def load_data(self, task_name='nonlinear',include_time=False, k=None, r= None):
+    def get_graph(self, task, k=None, r= None):
         # Checks
-        if task_name not in ['depth','nonlinear']:
-            raise ValueError('task_name must be either "depth" or "nonlinear"')
-        
-        # Part 1: load the data
-        gdf_data,gdf_location = self._from_file()
+        if task not in ['classification','regression']:
+            raise ValueError('task_name must be either "classification" or "regression"')
 
-        # Part 2: make the timestamps numeric
-        gdf_data['t'] = (gdf_data['t'] - self.start_date)/(self.end_date - self.start_date)
+        self.locations = torch.stack([torch.tensor(self.gdf_location.geometry.x.values),torch.tensor(self.gdf_location.geometry.y.values)]).T
+        self.siteIDs = list(self.gdf_location.siteID.values)       
 
-        # Part 2: create the graph
-        positions = torch.stack([torch.tensor(gdf_location.geometry.x.values),
-                                 torch.tensor(gdf_location.geometry.y.values),
-                                 ]).T
-        points = Data(pos=positions)
+        # Part 1: create the graph
 
+        points = Data(pos=self.locations)
         if k is not None:
             transform = T.KNNGraph(k=k,force_undirected=True,loop=False)
         elif r is not None:
@@ -168,20 +170,18 @@ class SubductionZone(object):
 
         graph = transform(points)
 
-        # Part 3: attach the features and targets
-
+        # Part 2: attach the features and targets
         features = []
         targets = []
-        for _,group in gdf_data.groupby('t'): # loop through the data by timestamp
-            group.reset_index(drop=True,inplace=True) 
-            if task_name == 'depth':
+        positions = []
+        for _, group in self.gdf_data.groupby('t'):  # loop through the data by timestamp
+            group.reset_index(drop=True, inplace=True)
+            features.append(group[['e', 'n', 'u']].values)
+            positions.append(self.locations)
+            if task == 'regression':
                 targets.append(group.depth.values)
-            if task_name == 'nonlinear':
-                targets.append(group.nonlinear.values)
-            if include_time:
-                features.append(group[['t','e','n','u']].values)
-            else:
-                features.append(group[['e','n','u']].values)
+            elif task == 'classification':
+                targets.append(group.label.values)
 
         return StaticGraphTemporalSignal(
             edge_index=graph.edge_index,

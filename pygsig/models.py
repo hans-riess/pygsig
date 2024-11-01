@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch import Tensor
 from typing import Optional
 
-# Temporal GNN models
+# RNN models
 class GConvGRURegression(nn.Module):
     def __init__(self, num_channels, K):
         super().__init__()
@@ -38,7 +38,22 @@ class GConvLSTMRegression(nn.Module):
         self.lin.reset_parameters()
         
     def forward(self, x: Tensor, edge_index: Tensor, edge_weight=None)->Tensor:
-        x, _ = self.recurrent(x, edge_index, edge_weight)
+        _, c = self.recurrent(x, edge_index, edge_weight)
+        c = self.lin(c)
+        return F.sigmoid(c)
+
+class DCRNNRegression(nn.Module):
+    def __init__(self,num_channels,K):
+        super().__init__()
+        self.recurrent = DCRNN(num_channels[0], num_channels[-2], K=K)
+        self.lin = nn.Linear(num_channels[-2], num_channels[-1])
+    
+    def reset_parameters(self):
+        self.recurrent.reset_parameters()
+        self.lin.reset_parameters()
+    
+    def forward(self, x: Tensor, edge_index: Tensor, edge_weight=None)->Tensor:
+        x = self.recurrent(x, edge_index, edge_weight)
         x = self.lin(x)
         return F.sigmoid(x)
 
@@ -87,6 +102,21 @@ class GCNClassification(nn.Module):
                 x = F.relu(x)
         return x
 
+class SigGCNClassification(nn.Module):
+    def __init__(self, num_channels):
+        super().__init__()
+        self.conv = gnn.GCNConv(num_channels[0], num_channels[1])
+        self.lin = nn.Linear(num_channels[-2], num_channels[-1])
+    
+    def reset_parameters(self):
+        self.conv.reset_parameters()
+        self.lin.reset_parameters()
+
+    def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Optional[Tensor] = None) -> Tensor:
+        x = self.conv(x, edge_index, edge_weight)
+        x = F.relu(x)
+        x = self.lin(x)
+        return x
 
 # Benchmarks
 
@@ -110,6 +140,22 @@ class MLPRegression(nn.Module):
             if i < self.num_layers - 1:
                 x = F.relu(x)
         return F.sigmoid(x)
+    
+class LSTMRegression(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, output_size):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, output_size)
+        self.dropout = nn.Dropout()
+
+    def forward(self, x: Tensor, edge_index: Tensor, edge_weight: Optional[Tensor] = None) -> Tensor:
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        out, _ = self.lstm(x, (h0, c0))
+        out = self.fc(out[:, -1, :])
+        return out
 
 class MLPClassification(nn.Module):
     def __init__(self, num_channels):
@@ -131,12 +177,3 @@ class MLPClassification(nn.Module):
             if i < self.num_layers - 1:
                 x = F.relu(x)
         return x
-
-# Our models
-class SignatureGAT(nn.Module):
-    def __init__(self):
-        pass
-
-class SignatureGCN(nn.Module):
-    def __init__(self):
-        pass

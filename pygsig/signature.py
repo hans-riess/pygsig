@@ -11,6 +11,7 @@ from signatory import multi_signature_combine
 from signatory import extract_signature_term, signature_channels
 from signatory import Signature, LogSignature
 from pygsig.graph import StaticGraphTemporalSignal, GeometricGraph
+import numpy as np
 
 class SignatureFeatures(T.BaseTransform):
     def __init__(self, sig_depth=3, normalize=True, log_signature=False, time_augment=False, lead_lag=False):
@@ -55,8 +56,11 @@ class SignatureFeatures(T.BaseTransform):
         # Initialize the feature sequence
         x_seq = torch.zeros([dataset.num_nodes, dataset.snapshot_count, dataset.num_node_features])
         for time, feature in enumerate(dataset.features):
+            # Check if `feature` is a numpy array, and if so, convert it
+            if isinstance(feature, np.ndarray):
+                feature = torch.from_numpy(feature).float()  # Convert to float tensor if needed
             x_seq[:, time, :] = feature
-        
+                
         # Apply lead-lag if enabled
         if self.lead_lag:
             x_seq = self.lead_lag_transform(x_seq)
@@ -78,6 +82,9 @@ class SignatureFeatures(T.BaseTransform):
         dataset_static = GeometricGraph(x=x, y=y, edge_index=dataset.edge_index, edge_weight=dataset.edge_weight, pos=pos)
         return dataset_static
 
+#----------------------------------------------------------------------------------------------------------------
+# STILL A WORK IN PROGRESS
+#----------------------------------------------------------------------------------------------------------------
 
 class StatFeatures(T.BaseTransform):
     def __init__(self, normalize=True):
@@ -99,10 +106,6 @@ class StatFeatures(T.BaseTransform):
             x = (x - mean_x)/std_x
         dataset_static = GeometricGraph(x=x,y=y,edge_index=dataset.edge_index,edge_weight=dataset.edge_weight,pos=pos)
         return dataset_static
-
-#-----------------------------------------------------------
-# STILL A WORK IN PROGRESS
-#-----------------------------------------------------------
 
 class Linear(nn.Module):
     def __init__(self,in_channels,out_channels,depth,bias=True):
