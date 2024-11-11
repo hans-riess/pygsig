@@ -27,14 +27,16 @@ class SubductionZone(object):
         self.rast_path = rast_path
         self.site_path = site_path
         self.data_path = data_path
+        self.task = task
         if download:
             self.download()
         self.load_data()
         self.X = np.stack([group[['e','n','u']].values for t,group in self.gdf_data.groupby('t')]).transpose(1,0,-1)
-        if task == 'classification':
+        if self.task == 'classification':
             self.y = np.stack([ group.label.unique() for _,group in self.gdf_data.groupby('siteID')])
-        if task == 'regression':
+        if self.task == 'regression':
             self.y = np.stack([ group.depth.unique() for _,group in self.gdf_data.groupby('siteID')])
+        self.num_stations = self.X.shape[0]
 
     def download(self):
 
@@ -152,11 +154,8 @@ class SubductionZone(object):
         self.gdf_data = gpd.read_file(self.data_path,driver='GeoJSON')
         self.gdf_location = gpd.read_file(self.site_path, driver="GeoJSON").to_crs("EPSG:2193")
 
-    def get_graph(self, task, k=None, r= None):
-        # Checks
-        if task not in ['classification','regression']:
-            raise ValueError('task_name must be either "classification" or "regression"')
-
+    def get_graph(self, k=None, r= None):
+        
         self.locations = torch.stack([torch.tensor(self.gdf_location.geometry.x.values),torch.tensor(self.gdf_location.geometry.y.values)]).T
         self.siteIDs = list(self.gdf_location.siteID.values)       
 
@@ -178,9 +177,9 @@ class SubductionZone(object):
             group.reset_index(drop=True, inplace=True)
             features.append(group[['e', 'n', 'u']].values)
             positions.append(self.locations)
-            if task == 'regression':
+            if self.task == 'regression':
                 targets.append(group.depth.values)
-            elif task == 'classification':
+            elif self.task == 'classification':
                 targets.append(group.label.values)
 
         return StaticGraphTemporalSignal(

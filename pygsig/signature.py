@@ -82,6 +82,8 @@ class SignatureFeatures(T.BaseTransform):
         dataset_static = GeometricGraph(x=x, y=y, edge_index=dataset.edge_index, edge_weight=dataset.edge_weight, pos=pos)
         return dataset_static
 
+
+
 #----------------------------------------------------------------------------------------------------------------
 # STILL A WORK IN PROGRESS
 #----------------------------------------------------------------------------------------------------------------

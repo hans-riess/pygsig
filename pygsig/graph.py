@@ -54,11 +54,14 @@ class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
             return torch.FloatTensor(self.targets[time_index])
     
     def _get_positions(self,time_index: int):
-        if self.positions[time_index] is None:
-            return self.positions[time_index]
+        if self.positions is None:
+            return self.positions
         else:
-            return torch.DoubleTensor(self.positions[time_index])
-    
+            if self.positions[time_index] is None:
+                return self.positions[time_index]
+            else:
+                return torch.DoubleTensor(self.positions[time_index])
+        
     def __getitem__(self, time_index: Union[int, slice]):
         if isinstance(time_index, slice):
             snapshot = StaticGraphTemporalSignal(
@@ -92,16 +95,12 @@ class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
         else:
             return X,y
 
-def split_nodes(num_nodes, num_splits,test_ratio = 0.8, seed=29):
+def split_nodes(num_nodes, num_splits, seed=29):
     np.random.seed(seed)
     indices = np.random.permutation(num_nodes)
-    
     splits = []
     for i in range(num_splits):
         nontrain_indices = indices[i::num_splits]  # disjoint test set for each split
         train_indices = np.setdiff1d(indices, nontrain_indices)
-        # nontrain indicies split into testing and validation
-        test_indices = nontrain_indices[:int(test_ratio *len(nontrain_indices))] 
-        eval_indices = nontrain_indices[int(test_ratio *len(nontrain_indices)):]
-        splits.append((train_indices, eval_indices, test_indices))
+        splits.append((train_indices, nontrain_indices))
     return splits
