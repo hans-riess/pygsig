@@ -1,8 +1,13 @@
 import torch
+import numpy as np
 import torch_geometric.transforms as T
 from torch_geometric.data import Data
 from pygsig.graph import StaticGraphTemporalSignal,GeometricGraph
 from signatory import LogSignature,Signature
+from tslearn.metrics import dtw
+from sklearn.manifold import MDS
+from sklearn.preprocessing import MinMaxScaler
+import pickle
 
 
 class SignatureFeatures(T.BaseTransform):
@@ -81,7 +86,7 @@ class TS2VecFeatures(T.BaseTransform):
         x = torch.tensor(self.encoder.encode(X, encoding_window='full_series'))
         y = dataset[-1].y
         pos = dataset[-1].pos
-
+    
         # Normalize if required
         if self.normalize:
             std_x = torch.std(x, dim=0)
@@ -101,6 +106,42 @@ class RandomFeatures(T.BaseTransform):
         x = torch.randn(dataset.num_nodes,self.num_features)
         y = dataset[-1].y
         pos = dataset[-1].pos
+
+        # Create the static graph dataset with transformed features
+        dataset_static = Data(x=x, y=y, edge_index=dataset.edge_index, edge_weight=dataset.edge_weight, pos=pos)
+        return dataset_static
+
+class DTWFeatures(T.BaseTransform):
+    def __init__(self,num_features,normalize=False,dtw_path=None):
+        super().__init__()
+        self.dtw_path = dtw_path
+        self.num_features = num_features
+        self.normalize = normalize
+        if dtw_path is not None:
+            self.DTW = torch.load(dtw_path).numpy()
+    
+    def forward(self, dataset):
+        X = torch.stack([snapshot.x for snapshot in dataset]).transpose(0, 1).numpy()
+        y = dataset[-1].y
+        pos = dataset[-1].pos
+        if self.DTW is None:
+            DTW = np.zeros(dataset.num_nodes,dataset.num_nodes)
+            for i in range(dataset.num_nodes):
+                for j in range(dataset.num_nodes):
+                    if i < j:
+                        DTW[i,j] = dtw(X[i,:,:], X[j,:,:])
+                        DTW[j,i] = DTW[i,j]
+            self.DTW = DTW
+   
+        # Apply multidimensional scaling
+        mds = MDS(n_components=self.num_features, dissimilarity='precomputed',normalized_stress='auto')
+        x = torch.tensor(mds.fit_transform(self.DTW)).float()
+
+        # Normalize if required
+        if self.normalize:
+            std_x = torch.std(x, dim=0)
+            mean_x = torch.mean(x, dim=0)
+            x = (x - mean_x) / std_x
 
         # Create the static graph dataset with transformed features
         dataset_static = Data(x=x, y=y, edge_index=dataset.edge_index, edge_weight=dataset.edge_weight, pos=pos)

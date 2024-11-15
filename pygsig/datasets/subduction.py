@@ -15,8 +15,9 @@ class SubductionZone(object):
                  label_path='../datasets/subduction/nonlinear.json', # nonlinear/linear labels
                  site_path='../datasets/subduction/site_location.geojson',
                  data_path='../datasets/subduction/site_data.geojson',
-                 start_date=pd.Timestamp('2010-01-01 11:59:00+0000', tz='UTC'),
-                 end_date=pd.Timestamp('2023-12-15 11:59:00+0000', tz='UTC'),
+                 dtw_path='../datasets/subduction/dtw.pt',
+                 start_date=pd.Timestamp('2008-01-01 11:59:00+0000', tz='UTC'),
+                 end_date=pd.Timestamp('2023-12-31 11:59:00+0000', tz='UTC'),
                  task='classification',
                  download=False
                 ):
@@ -27,16 +28,17 @@ class SubductionZone(object):
         self.rast_path = rast_path
         self.site_path = site_path
         self.data_path = data_path
+        self.dtw_path = dtw_path
         self.task = task
         if download:
             self.download()
         self.load_data()
-        self.X = np.stack([group[['e','n','u']].values for t,group in self.gdf_data.groupby('t')]).transpose(1,0,-1)
+        self.X = np.stack([group[['e','n','u']].values for t,group in self.df.groupby('t')]).transpose(1,0,-1)
         if self.task == 'classification':
-            self.y = np.stack([ group.label.unique() for _,group in self.gdf_data.groupby('siteID')])
+            self.y = np.stack([ group.label.unique() for _,group in self.df.groupby('siteID')])
         if self.task == 'regression':
-            self.y = np.stack([ group.depth.unique() for _,group in self.gdf_data.groupby('siteID')])
-        self.num_stations = self.X.shape[0]
+            self.y = np.stack([ group.depth.unique() for _,group in self.df.groupby('siteID')])
+        self.stations = self.gdf_location.siteID.values
 
     def download(self):
 
@@ -63,6 +65,9 @@ class SubductionZone(object):
         typeID = 'e'
         url = base_url + endpoint + '?typeID=' + typeID + '&within=' + polygon_str
         sites = requests.get(url)
+        # Handle AI failures
+        if sites.status_code != 200:
+            raise ConnectionError(f"Failed to fetch data from GeoNET API. Status code: {sites.status_code}")
         json_data = sites.json()['features']
         
         def geo_to_raster_idx(lat, lon, transform):
@@ -74,6 +79,8 @@ class SubductionZone(object):
         depths = []
         siteIDs = []
         geometries = []
+        x_coords = []
+        y_coords = []
         labels = []
         marker_colors  = []
         marker_size = []
@@ -98,6 +105,8 @@ class SubductionZone(object):
                 siteIDs.append(siteID)
                 depths.append(depth)
                 geometries.append(Point(lon_coord, lat_coord,depth))
+                x_coords.append(lon_coord)
+                y_coords.append(lat_coord)
                 heights.append(height)
                 labels.append(label)
 
@@ -116,8 +125,10 @@ class SubductionZone(object):
                     marker_symbol.append('circle')
         # save location data in a .geojson file
         self.gdf_location = gpd.GeoDataFrame({   'siteID': siteIDs, 
-                                            'depth': depths, 
-                                            'height': heights, 
+                                            'd': depths, 
+                                            'h': heights, 
+                                            'x': x_coords,
+                                            'y': y_coords,
                                             'label': labels,
                                             'marker-color': marker_colors,
                                             'marker-size': marker_size,
@@ -143,24 +154,34 @@ class SubductionZone(object):
 
         df.reset_index(inplace=True)
         df = df.rename(columns={'index': 't'})
-        self.df_data = df[['siteID', 't', 'e', 'n', 'u']]
-        self.gdf_data = pd.merge(self.df_data, self.gdf_location, on='siteID', how='left') # Merge with location data
-        self.gdf_data[['e', 'n', 'u']] = self.gdf_data[['e', 'n', 'u']].ffill().bfill() # Fill missing values with backward fill and forward fill
-        gdf_data = gpd.GeoDataFrame(self.gdf_data, geometry='geometry', crs="EPSG:4326") # WGS 84
-        gdf_data.to_file(self.data_path, driver="GeoJSON") # Save to file
+        self.df = df[['siteID', 't', 'e', 'n', 'u']]
+        self.df = pd.merge(self.df, self.gdf_location[['siteID','d','h','x','y','label','geometry']], on='siteID', how='left') # Merge with location data
+        self.df[['e', 'n', 'u']] = self.df[['e', 'n', 'u']].ffill().bfill() # Fill missing values with backward fill and forward fill
+        # normalize the data
+        self.df['e_n'] = (self.df.e - self.df.e.mean())/self.df.e.std() 
+        self.df['n_n'] = (self.df.n - self.df.n.mean())/self.df.n.std()
+        self.df['u_n'] = (self.df.u - self.df.u.mean())/self.df.u.std()
+        self.df['d_n'] = (self.df.d - self.df.d.mean())/self.df.d.std()
+        self.df['h_n'] = (self.df.h - self.df.h.mean())/self.df.h.std()
+        self.df['x_n'] = (self.df.x-self.df.x.min())/(self.df.x.max()-self.df.x.min())
+        self.df['y_n'] = (self.df.y-self.df.y.min())/(self.df.y.max()-self.df.y.min())
+        # save the data in a .geojson file
+        self.df = gpd.GeoDataFrame(self.df, geometry='geometry', crs="EPSG:4326") # WGS 84
+        self.df.to_file(self.data_path, driver="GeoJSON") # Save to file
 
     def load_data(self):
         import geopandas as gpd
-        self.gdf_data = gpd.read_file(self.data_path,driver='GeoJSON')
+        self.df = gpd.read_file(self.data_path,driver='GeoJSON')
         self.gdf_location = gpd.read_file(self.site_path, driver="GeoJSON").to_crs("EPSG:2193")
 
-    def get_graph(self, k=None, r= None):
+    def get_graph(self, k=None, r= None, normalize=False, lag=None):
         
         self.locations = torch.stack([torch.tensor(self.gdf_location.geometry.x.values),torch.tensor(self.gdf_location.geometry.y.values)]).T
+        if normalize:
+            self.locations = (self.locations - self.locations.mean(dim=0))/self.locations.std(dim=0)
         self.siteIDs = list(self.gdf_location.siteID.values)       
 
         # Part 1: create the graph
-
         points = Data(pos=self.locations)
         if k is not None:
             transform = T.KNNGraph(k=k,force_undirected=True,loop=False)
@@ -173,14 +194,43 @@ class SubductionZone(object):
         features = []
         targets = []
         positions = []
-        for _, group in self.gdf_data.groupby('t'):  # loop through the data by timestamp
-            group.reset_index(drop=True, inplace=True)
-            features.append(group[['e', 'n', 'u']].values)
-            positions.append(self.locations)
+        
+        if self.task == 'forecasting':
+            pre_features = []
+            pre_positions = []
+            for _, group in self.df.groupby('t'):
+                if normalize:
+                    pre_features.append(group.e_n.values)
+                if not normalize:
+                    pre_features.append(group.e.values)
+            for t in range(lag, len(pre_features)):
+                x = np.stack(pre_features[t-lag:t]).T
+                y = pre_features[t]
+                features.append(x)
+                targets.append(y)
+                positions.append(self.locations)
+
+        for t, group in self.df.groupby('t'):  # loop through the data by timestamp
             if self.task == 'regression':
-                targets.append(group.depth.values)
-            elif self.task == 'classification':
-                targets.append(group.label.values)
+                group.reset_index(drop=True, inplace=True)
+                if normalize:
+                    features.append(group[['e_n', 'n_n', 'u_n']].values)
+                    positions.append(self.locations)
+                    targets.append(group.d_n.values)
+                if not normalize:
+                    features.append(group[['e', 'n', 'u']].values)
+                    positions.append(self.locations)
+                    targets.append(group.d.values)
+            if self.task == 'classification':
+                group.reset_index(drop=True, inplace=True)
+                if not normalize:
+                    features.append(group[['e', 'n', 'u']].values)
+                    positions.append(self.locations)
+                    targets.append(group.label.values)   
+                if normalize:
+                    features.append(group[['e_n', 'n_n', 'u_n']].values)
+                    positions.append(self.locations)
+                    targets.append(group.label.values)
 
         return StaticGraphTemporalSignal(
             edge_index=graph.edge_index,
