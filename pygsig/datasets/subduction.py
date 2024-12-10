@@ -19,7 +19,9 @@ class SubductionZone(object):
                  start_date=pd.Timestamp('2008-01-01 11:59:00+0000', tz='UTC'),
                  end_date=pd.Timestamp('2023-12-31 11:59:00+0000', tz='UTC'),
                  task='classification',
-                 download=False
+                 download=False,
+                 load = True,
+                 normalize = True,
                 ):
         self.start_date = start_date
         self.end_date = end_date
@@ -32,16 +34,23 @@ class SubductionZone(object):
         self.task = task
         if download:
             self.download()
-        self.load_data()
-        self.X = np.stack([group[['e','n','u']].values for t,group in self.df.groupby('t')]).transpose(1,0,-1)
-        if self.task == 'classification':
-            self.y = np.stack([ group.label.unique() for _,group in self.df.groupby('siteID')])
-        if self.task == 'regression':
-            self.y = np.stack([ group.depth.unique() for _,group in self.df.groupby('siteID')])
-        self.stations = self.gdf_location.siteID.values
+        if load:
+            # load data
+            self.load_data()
+            self.X = np.stack([group[['e','n','u']].values for t,group in self.df.groupby('t')]).transpose(1,0,-1)
+            if self.task == 'classification':
+                self.y = np.stack([ group.label.unique() for _,group in self.df.groupby('siteID')])
+            if self.task == 'regression':
+                self.y = np.stack([ group.d.unique() for _,group in self.df.groupby('siteID')])
+            self.stations = self.gdf_location.siteID.values
+            self.locations = torch.stack([torch.tensor(self.gdf_location.geometry.x.values),torch.tensor(self.gdf_location.geometry.y.values)]).T.numpy()
+        if normalize:
+            self.normalize_data()
+            self.X_norm = np.stack([group[['e_n','n_n','u_n']].values for t,group in self.df.groupby('t')]).transpose(1,0,-1)
+            if self.task == 'regression':
+                self.y = np.stack([ group.d_n.unique() for _,group in self.df.groupby('siteID')])
 
     def download(self):
-
         import geopandas as gpd
         import rasterio
         from shapely.geometry import Point, Polygon
@@ -157,14 +166,36 @@ class SubductionZone(object):
         self.df = df[['siteID', 't', 'e', 'n', 'u']]
         self.df = pd.merge(self.df, self.gdf_location[['siteID','d','h','x','y','label','geometry']], on='siteID', how='left') # Merge with location data
         self.df[['e', 'n', 'u']] = self.df[['e', 'n', 'u']].ffill().bfill() # Fill missing values with backward fill and forward fill
-        # normalize the data
-        self.df['e_n'] = (self.df.e - self.df.e.mean())/self.df.e.std() 
-        self.df['n_n'] = (self.df.n - self.df.n.mean())/self.df.n.std()
-        self.df['u_n'] = (self.df.u - self.df.u.mean())/self.df.u.std()
-        self.df['d_n'] = (self.df.d - self.df.d.mean())/self.df.d.std()
-        self.df['h_n'] = (self.df.h - self.df.h.mean())/self.df.h.std()
-        self.df['x_n'] = (self.df.x-self.df.x.min())/(self.df.x.max()-self.df.x.min())
-        self.df['y_n'] = (self.df.y-self.df.y.min())/(self.df.y.max()-self.df.y.min())
+
+        # save the data in a .geojson file
+        self.df = gpd.GeoDataFrame(self.df, geometry='geometry', crs="EPSG:4326") # WGS 84
+        self.df.to_file(self.data_path, driver="GeoJSON") # Save to file
+    
+    def normalize_data(self):
+        import geopandas as gpd
+        
+        def normalize_group(group):
+            group['e'] = (group['e'] - group['e'].mean()) / group['e'].std()
+            group['n'] = (group['n'] - group['n'].mean()) / group['n'].std()
+            group['u'] = (group['u'] - group['u'].mean()) / group['u'].std()
+            # Ensure 'd' exists in the DataFrame before trying to normalize it
+            if 'd' in group.columns:
+                group['d'] = (group['d'] - group['d'].mean()) / group['d'].std()
+            return group
+
+        # Normalize and reset index to match the original DataFrame
+        new_df = (
+            self.df[['siteID', 'e', 'n', 'u', 'd']]
+            .groupby('siteID', group_keys=False)
+            .apply(normalize_group)
+            .reset_index(drop=True)
+        )
+
+        # Align indices and assign normalized columns
+        self.df['e_n'] = new_df['e'].values
+        self.df['n_n'] = new_df['n'].values
+        self.df['u_n'] = new_df['u'].values
+
         # save the data in a .geojson file
         self.df = gpd.GeoDataFrame(self.df, geometry='geometry', crs="EPSG:4326") # WGS 84
         self.df.to_file(self.data_path, driver="GeoJSON") # Save to file
@@ -175,7 +206,6 @@ class SubductionZone(object):
         self.gdf_location = gpd.read_file(self.site_path, driver="GeoJSON").to_crs("EPSG:2193")
 
     def get_graph(self, k=None, r= None, normalize=False, lag=None):
-        
         self.locations = torch.stack([torch.tensor(self.gdf_location.geometry.x.values),torch.tensor(self.gdf_location.geometry.y.values)]).T
         if normalize:
             self.locations = (self.locations - self.locations.mean(dim=0))/self.locations.std(dim=0)
