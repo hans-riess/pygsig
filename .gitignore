@@ -7,10 +7,11 @@
 *.skeleton
 *.h5
 *.grd
+*.xlsx
 
-# torch
-*.pth
-*.pt
+# Pipenv
+Pipfile
+Pipfile.lock
 
 # images / videos
 *.png
@@ -25,9 +26,18 @@
 # cache
 *.pyc
 *.DS_Store
+.pytest_cache/
 
 #dump
 _dump/
 
 #plots
 plots/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# torch
+*.pth
+*.pt

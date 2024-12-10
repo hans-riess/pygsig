@@ -2,3 +2,6 @@
 	path = signatory
 	url = git@github.com:patrick-kidger/signatory.git
 	branch = master
+[submodule "ts2vec"]
+	path = ts2vec
+	url = git@github.com:zhihanyue/ts2vec.git

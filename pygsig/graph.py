@@ -26,48 +26,9 @@ class GraphKernel(T.BaseTransform):
         graph.edge_attr = torch.exp(-torch.sum(graph.edge_attr**2,dim=-1)/self.bandwidth**2).float()
         return graph
 
-class KernelKNNGraph(T.BaseTransform):
-    def __init__(self,k: int, bandwidth: float):
-        super().__init__()
-        self.k = k
-        self.bandwidth = bandwidth
-        self.knn_graph = T.KNNGraph(self.k,force_undirected=True,loop=False,num_workers=4)
-        self.transform = T.Compose([self.knn_graph,GraphKernel(bandwidth)])
-    
-    def forward(self, graph: Data) -> Data:
-        return self.transform(graph)
-
-
-class KernelRadiusGraph(T.BaseTransform):
-    def __init__(self,r: int, bandwidth: float):
-        super().__init__()
-        self.r = r
-        self.bandwidth = bandwidth
-        self.radius_graph = T.RadiusGraph(r=self.r,loop=False,num_workers=4)
-        self.transform = T.Compose([self.radius_graph,GraphKernel(bandwidth)])
-    
-    def forward(self, graph: Data) -> Data:
-        return self.transform(graph)
-
 class GeometricGraph(Data):
     def __init__(self, edge_index, x, y, edge_weight,pos):
         super().__init__(edge_index=edge_index, edge_attr=edge_weight,x=x,y=y,pos=pos)
-
-    def draw_graph(self):
-        from torch_geometric.utils import to_networkx
-        import networkx as nx
-        import matplotlib.pyplot as plt
-        nx_graph = to_networkx(self,to_undirected=True)
-        if self.pos is None:
-            pos = nx.spring_layout(nx_graph)
-        else:
-            pos_array = self.pos.numpy()
-            pos_array = (pos_array - np.min(pos_array,axis=0))/(np.max(pos_array,axis=0)-np.min(pos_array,axis=0))
-            pos_array = (pos_array - np.min(pos_array,axis=0))/(np.max(pos_array,axis=0)-np.min(pos_array,axis=0))
-            pos = {i: (p[0], p[1]) for i, p in enumerate(pos_array)}
-        nx.draw_networkx_nodes(nx_graph, pos, node_size=10)
-        nx.draw_networkx_edges(nx_graph, pos, alpha=0.5)
-        plt.show()
         
 
 class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
@@ -92,12 +53,15 @@ class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
         else:
             return torch.FloatTensor(self.targets[time_index])
     
-    def _get_positions(self):
+    def _get_positions(self,time_index: int):
         if self.positions is None:
             return self.positions
         else:
-            return torch.DoubleTensor(self.positions)
-    
+            if self.positions[time_index] is None:
+                return self.positions[time_index]
+            else:
+                return torch.DoubleTensor(self.positions[time_index])
+        
     def __getitem__(self, time_index: Union[int, slice]):
         if isinstance(time_index, slice):
             snapshot = StaticGraphTemporalSignal(
@@ -105,7 +69,7 @@ class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
                 self.edge_weight,
                 self.features[time_index],
                 self.targets[time_index],
-                self.positions
+                self.positions[time_index],
                 **{key: getattr(self, key)[time_index] for key in self.additional_feature_keys}
             )
         else:
@@ -113,11 +77,11 @@ class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
             edge_index = self._get_edge_index()
             edge_weight = self._get_edge_weight()
             y = self._get_target(time_index)
-            pos = self._get_positions()
+            pos = self._get_positions(time_index)
             additional_features = self._get_additional_features(time_index)
 
             snapshot = Data(x=x, edge_index=edge_index, edge_attr=edge_weight,
-                            y=y,pos=pos, **additional_features)
+                            y=y, pos=pos, **additional_features)
         return snapshot
 
     def _get_feature_matrix(self,numpy=False):
@@ -131,15 +95,12 @@ class StaticGraphTemporalSignal(tgnn.signal.StaticGraphTemporalSignal):
         else:
             return X,y
 
-def split_nodes(num_nodes, num_splits,seed=29):
+def split_nodes(num_nodes, num_splits, seed=29):
     np.random.seed(seed)
     indices = np.random.permutation(num_nodes)
-    
     splits = []
     for i in range(num_splits):
-        nontrain_indices = indices[i::num_splits]  # Disjoint test set for each split
+        nontrain_indices = indices[i::num_splits]  # disjoint test set for each split
         train_indices = np.setdiff1d(indices, nontrain_indices)
-        test_indices = nontrain_indices[:len(nontrain_indices)//2]
-        eval_indices = nontrain_indices[len(nontrain_indices)//2:]
-        splits.append((train_indices, eval_indices, test_indices))
+        splits.append((train_indices, nontrain_indices))
     return splits
